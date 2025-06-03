@@ -1,8 +1,78 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:lottie/lottie.dart';
 import '../models/medical_models.dart';
 import '../utils/theme.dart';
+
+// Particle class for success animation
+class Particle {
+  final Color color;
+  final double size;
+  final double initialDirection;
+  final double speed;
+  double x = 0;
+  double y = 0;
+  
+  Particle({
+    required this.color,
+    required this.size,
+    required this.initialDirection,
+    required this.speed,
+  });
+  
+  void update(double animationValue) {
+    // Update particle position based on direction and animation progress
+    final distance = speed * animationValue;
+    x = math.cos(initialDirection) * distance;
+    y = math.sin(initialDirection) * distance - 
+        (30 * animationValue * animationValue); // Apply gravity-like effect
+  }
+}
+
+// Custom painter to render particles
+class ParticlePainter extends CustomPainter {
+  final List<Particle> particles;
+  final double animationValue;
+  
+  ParticlePainter({
+    required this.particles,
+    required this.animationValue,
+  });
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    
+    for (final particle in particles) {
+      // Calculate particle position
+      final position = center.translate(particle.x, particle.y);
+      
+      // Calculate opacity based on animation progress
+      final opacity = 1.0 - animationValue;
+      
+      // Draw particle
+      final paint = Paint()
+        ..color = particle.color.withOpacity(opacity)
+        ..style = PaintingStyle.fill
+        ..blendMode = BlendMode.srcOver;
+      
+      canvas.drawCircle(position, particle.size * (1.0 - animationValue * 0.5), paint);
+      
+      // Add glow effect
+      final glowPaint = Paint()
+        ..color = particle.color.withOpacity(opacity * 0.4)
+        ..style = PaintingStyle.fill
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+      
+      canvas.drawCircle(position, particle.size * 1.3 * (1.0 - animationValue * 0.5), glowPaint);
+    }
+  }
+  
+  @override
+  bool shouldRepaint(ParticlePainter oldDelegate) {
+    return animationValue != oldDelegate.animationValue;
+  }
+}
 
 class GameCard extends StatefulWidget {
   final MedicalParameter parameter;
@@ -38,15 +108,27 @@ class _GameCardState extends State<GameCard>
   late AnimationController _scaleController;
   late AnimationController _errorController;
   late AnimationController _glowController;
+  late AnimationController _particleController;
   
   late Animation<Offset> _positionAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<double> _errorAnimation;
   late Animation<double> _glowAnimation;
+  late Animation<double> _particleAnimation;
   
   bool _isAnimating = false;
   bool _showError = false;
+  bool _showSuccess = false;
   String _errorText = '';
+  
+  // For success particles
+  final List<Color> _particleColors = [
+    Colors.green,
+    AppTheme.primaryNeon,
+    Colors.cyanAccent,
+    Colors.yellowAccent,
+  ];
+  final List<Particle> _particles = [];
 
   @override
   void initState() {
@@ -74,6 +156,11 @@ class _GameCardState extends State<GameCard>
       duration: const Duration(milliseconds: 2000),
       vsync: this,
     )..repeat(reverse: true);
+    
+    _particleController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
 
     _positionAnimation = Tween<Offset>(
       begin: Offset.zero,
@@ -106,6 +193,44 @@ class _GameCardState extends State<GameCard>
       parent: _glowController,
       curve: Curves.easeInOut,
     ));
+    
+    _particleAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _particleController,
+      curve: Curves.easeOut,
+    ));
+    
+    // Generate particle effects
+    _generateParticles();
+    
+    // Listen to particle animation
+    _particleController.addListener(() {
+      if (_showSuccess && mounted) {
+        setState(() {}); // Redraw particles
+      }
+    });
+  }
+  
+  void _generateParticles() {
+    final rnd = math.Random();
+    _particles.clear();
+    
+    // Generate 20 particles for success animation
+    for (int i = 0; i < 20; i++) {
+      final color = _particleColors[rnd.nextInt(_particleColors.length)];
+      final size = rnd.nextDouble() * 12 + 5;  // 5-17 pixel particles
+      final initialDirection = rnd.nextDouble() * math.pi * 2; // Random direction
+      final speed = rnd.nextDouble() * 100 + 50; // 50-150 pixels per second
+      
+      _particles.add(Particle(
+        color: color,
+        size: size,
+        initialDirection: initialDirection,
+        speed: speed,
+      ));
+    }
   }
 
   @override
@@ -114,18 +239,11 @@ class _GameCardState extends State<GameCard>
     _scaleController.dispose();
     _errorController.dispose();
     _glowController.dispose();
+    _particleController.dispose();
     super.dispose();
   }
 
-  SwipeDirection _getSwipeDirection(DragEndDetails details) {
-    final velocity = details.velocity.pixelsPerSecond;
-    
-    if (velocity.dx.abs() > velocity.dy.abs()) {
-      return velocity.dx > 500 ? SwipeDirection.right : SwipeDirection.left;
-    } else {
-      return SwipeDirection.up;
-    }
-  }
+
 
   ValueType _getCorrectAnswer() {
     if (widget.value < widget.unitData.normalLow) {
@@ -170,28 +288,40 @@ class _GameCardState extends State<GameCard>
   }
 
   Future<void> _animateCorrectSwipe(SwipeDirection direction) async {
+    // Stronger haptic feedback on correct answer
+    HapticFeedback.mediumImpact();
+    
+    // Show success particles
+    setState(() {
+      _showSuccess = true;
+    });
+    
     // Scale up slightly
     _scaleAnimation = Tween<double>(
       begin: 1.0,
-      end: 1.1,
+      end: 1.15, // Scale up more for correct answers
     ).animate(CurvedAnimation(
       parent: _scaleController,
       curve: Curves.easeOut,
     ));
     
-    await _scaleController.forward();
+    // Start particle animation
+    _particleController.forward(from: 0.0);
     
-    // Fly out in swipe direction
+    await _scaleController.forward();
+    await Future.delayed(const Duration(milliseconds: 200)); // Hold briefly to see the effect
+    
+    // Fly out in swipe direction with nice physics
     Offset targetOffset;
     switch (direction) {
       case SwipeDirection.left:
-        targetOffset = const Offset(-2.0, 0.0);
+        targetOffset = const Offset(-2.5, 0.0);
         break;
       case SwipeDirection.right:
-        targetOffset = const Offset(2.0, 0.0);
+        targetOffset = const Offset(2.5, 0.0);
         break;
       case SwipeDirection.up:
-        targetOffset = const Offset(0.0, 2.0);
+        targetOffset = const Offset(0.0, -2.5); // Changed to negative for upward motion
         break;
     }
     
@@ -200,20 +330,28 @@ class _GameCardState extends State<GameCard>
       end: targetOffset,
     ).animate(CurvedAnimation(
       parent: _positionController,
-      curve: Curves.easeInBack,
+      curve: Curves.easeInOutBack,
     ));
     
     await _positionController.forward();
+    
+    // Reset success state for next card
+    setState(() {
+      _showSuccess = false;
+    });
   }
 
   Future<void> _animateWrongSwipe(SwipeDirection direction) async {
-    // Show error state
+    // More intense haptic feedback for wrong answers
+    HapticFeedback.heavyImpact();
+    
+    // Show error state with visual feedback
     setState(() {
       _showError = true;
       _errorText = _getErrorText(direction);
     });
     
-    // Small bounce animation
+    // Small bounce animation with more realistic physics
     _positionAnimation = Tween<Offset>(
       begin: Offset.zero,
       end: _getErrorOffset(direction),
@@ -222,9 +360,10 @@ class _GameCardState extends State<GameCard>
       curve: Curves.elasticOut,
     ));
     
+    // Shake and scale down slightly
     _scaleAnimation = Tween<double>(
       begin: 1.0,
-      end: 0.95,
+      end: 0.92, // Scale down more for emphasis
     ).animate(CurvedAnimation(
       parent: _scaleController,
       curve: Curves.easeOut,
@@ -236,8 +375,8 @@ class _GameCardState extends State<GameCard>
       _errorController.forward(),
     ]);
     
-    // Return to center
-    await Future.delayed(const Duration(milliseconds: 500));
+    // Hold error state longer so user can read the message
+    await Future.delayed(const Duration(milliseconds: 800));
     
     await Future.wait([
       _positionController.reverse(),
@@ -314,15 +453,43 @@ class _GameCardState extends State<GameCard>
     }
   }
 
+  // ... (rest of the code remains the same)
+
   @override
   Widget build(BuildContext context) {
+    // Update particles if success animation is active
+    if (_showSuccess) {
+      for (final particle in _particles) {
+        particle.update(_particleAnimation.value);
+      }
+    }
+
     return GestureDetector(
-      onPanEnd: (details) {
-        if (!_isAnimating) {
-          final direction = _getSwipeDirection(details);
-          _handleSwipe(direction);
+      onHorizontalDragEnd: (details) {
+        if (_isAnimating) return;
+        
+        final velocity = details.velocity.pixelsPerSecond;
+        final SwipeDirection direction;
+        
+        if (velocity.dx > 500) {
+          direction = SwipeDirection.right;
+        } else if (velocity.dx < -500) {
+          direction = SwipeDirection.left;
+        } else {
+          return; // Not enough velocity to trigger
+        }
+        
+        _handleSwipe(direction);
+      },
+      onVerticalDragEnd: (details) {
+        if (_isAnimating) return;
+        
+        final velocity = details.velocity.pixelsPerSecond;
+        if (velocity.dy < -500) {
+          _handleSwipe(SwipeDirection.up);
         }
       },
+      
       child: AnimatedBuilder(
         animation: Listenable.merge([
           _positionAnimation,
@@ -336,232 +503,231 @@ class _GameCardState extends State<GameCard>
               _positionAnimation.value.dx * MediaQuery.of(context).size.width,
               _positionAnimation.value.dy * MediaQuery.of(context).size.height,
             ),
-            child: Transform.scale(
-              scale: _scaleAnimation.value,
-              child: Container(
-                width: MediaQuery.of(context).size.width * 0.85,
-                height: MediaQuery.of(context).size.height * 0.65,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppTheme.surfaceDark,
-                      AppTheme.surfaceDark.withOpacity(0.8),
-                      AppTheme.primaryNeon.withOpacity(0.1),
-                    ],
-                    stops: const [0.0, 0.7, 1.0],
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Success particles layer (drawn behind card)
+                if (_showSuccess)
+                  AnimatedBuilder(
+                    animation: _particleAnimation,
+                    builder: (context, child) {
+                      return CustomPaint(
+                        size: Size(300, 400),
+                        painter: ParticlePainter(
+                          particles: _particles,
+                          animationValue: _particleAnimation.value,
+                        ),
+                      );
+                    },
                   ),
-                  border: Border.all(
-                    color: _showError 
-                        ? Colors.red.withOpacity(_errorAnimation.value)
-                        : AppTheme.primaryNeon.withOpacity(_glowAnimation.value),
-                    width: _showError ? 3 : 2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _showError 
-                          ? Colors.red.withOpacity(_errorAnimation.value * 0.5)
-                          : AppTheme.primaryNeon.withOpacity(_glowAnimation.value * 0.3),
-                      blurRadius: _showError ? 15 : 20,
-                      spreadRadius: _showError ? 3 : 5,
-                    ),
-                    BoxShadow(
-                      color: AppTheme.secondaryNeon.withOpacity(_glowAnimation.value * 0.2),
-                      blurRadius: 30,
-                      spreadRadius: 8,
-                    ),
-                  ],
-                ),
-                child: Stack(
-                  children: [
-                    // Content
-                    Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Difficulty badge
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _getDifficultyColor().withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: _getDifficultyColor(),
-                                    width: 1.5,
-                                  ),
-                                ),
-                                child: Text(
-                                  _getDifficultyText(),
-                                  style: TextStyle(
-                                    color: _getDifficultyColor(),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              const Spacer(),
-                              if (_getSexContextText().isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.secondaryNeon.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: AppTheme.secondaryNeon,
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    _getSexContextText(),
-                                    style: const TextStyle(
-                                      color: AppTheme.secondaryNeon,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                            ],
+                // Card layer
+                Transform.scale(
+                  scale: _scaleAnimation.value,
+                  child: Transform.translate(
+                    offset: _positionAnimation.value,
+                    child: Container(
+                      width: MediaQuery.of(context).size.width * 0.85,
+                      height: MediaQuery.of(context).size.height * 0.65,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            AppTheme.surfaceDark,
+                            AppTheme.surfaceDark.withOpacity(0.8),
+                            AppTheme.primaryNeon.withOpacity(0.1),
+                          ],
+                          stops: const [0.0, 0.7, 1.0],
+                        ),
+                        border: Border.all(
+                          color: _showError
+                              ? Colors.red.withOpacity(_errorAnimation.value)
+                              : AppTheme.primaryNeon.withOpacity(_glowAnimation.value),
+                          width: _showError ? 3 : 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _showError
+                                ? Colors.red.withOpacity(_errorAnimation.value * 0.5)
+                                : AppTheme.primaryNeon.withOpacity(_glowAnimation.value * 0.3),
+                            blurRadius: _showError ? 15 : 20,
+                            spreadRadius: _showError ? 3 : 5,
                           ),
-                          
-                          const SizedBox(height: 40),
-                          
-                          // Parameter name with Lottie logo
-                          Row(
-                            children: [
-                              // Small logo animation
-                              SizedBox(
-                                width: 28,
-                                height: 28,
-                                child: Lottie.asset(
-                                  'assets/lottie/logo.json',
-                                  repeat: true,
+                          BoxShadow(
+                            color: AppTheme.secondaryNeon.withOpacity(_glowAnimation.value * 0.2),
+                            blurRadius: 30,
+                            spreadRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: Stack(
+                        children: [
+                          // Content
+                          Padding(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Difficulty badge
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _getDifficultyColor().withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: _getDifficultyColor(),
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        _getDifficultyText(),
+                                        style: TextStyle(
+                                          color: _getDifficultyColor(),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    if (_getSexContextText().isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.secondaryNeon.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(20),
+                                          border: Border.all(
+                                            color: AppTheme.secondaryNeon,
+                                            width: 1.5,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          _getSexContextText(),
+                                          style: const TextStyle(
+                                            color: AppTheme.secondaryNeon,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              // Parameter name
-                              Expanded(
-                                child: Text(
+                                const SizedBox(height: 20),
+                                
+                                // Parameter name
+                                Text(
                                   widget.parameter.name,
                                   style: const TextStyle(
-                                    color: AppTheme.textBright,
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    height: 1.2,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          
-                          const SizedBox(height: 20),
-                          
-                          // Parameter explanation
-                          Text(
-                            widget.parameter.explanation,
-                            style: const TextStyle(
-                              color: AppTheme.textSecondary,
-                              fontSize: 16,
-                              height: 1.4,
-                            ),
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          
-                          const Spacer(),
-                          
-                          // Value display
-                          Center(
-                            child: Column(
-                              children: [
-                                Text(
-                                  widget.displayValue,
-                                  style: const TextStyle(
-                                    color: AppTheme.textBright,
-                                    fontSize: 48,
+                                    color: Colors.white,
+                                    fontSize: 28,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
+                                
+                                const SizedBox(height: 8),
+                                
+                                // Parameter explanation
                                 Text(
-                                  widget.unitData.unitSymbol,
-                                  style: const TextStyle(
-                                    color: AppTheme.secondaryNeon,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w600,
+                                  widget.parameter.explanation,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.7),
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                                
+                                const Spacer(),
+                                
+                                // Value display
+                                Center(
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        widget.displayValue,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 48,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      Text(
+                                        widget.unitData.unitSymbol,
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.7),
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                
+                                const Spacer(),
+                                
+                                // Swipe instructions
+                                Center(
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        'Swipe to classify',
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.7),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
                             ),
                           ),
                           
-                          const Spacer(),
-                          
-                          // Swipe hints
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              _buildSwipeHint('← LOW', Colors.blue),
-                              _buildSwipeHint('↑ NORMAL', Colors.green),
-                              _buildSwipeHint('HIGH →', Colors.red),
-                            ],
-                          ),
+                          // Error overlay
+                          if (_showError)
+                            Positioned.fill(
+                              child: AnimatedOpacity(
+                                opacity: _errorAnimation.value,
+                                duration: const Duration(milliseconds: 200),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.7),
+                                    borderRadius: BorderRadius.circular(24),
+                                  ),
+                                  child: Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(20.0),
+                                      child: Text(
+                                        _errorText,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
-                    
-                    // Error overlay
-                    if (_showError)
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(_errorAnimation.value * 0.9),
-                            borderRadius: const BorderRadius.only(
-                              bottomLeft: Radius.circular(24),
-                              bottomRight: Radius.circular(24),
-                            ),
-                          ),
-                          child: Text(
-                            _errorText,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildSwipeHint(String text, Color color) {
-    return Text(
-      text,
-      style: TextStyle(
-        color: color.withOpacity(0.7),
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
       ),
     );
   }
