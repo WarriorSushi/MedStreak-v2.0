@@ -1,4 +1,6 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../widgets/game_card.dart';
 import '../services/game_service.dart';
@@ -136,7 +138,7 @@ class _CardContainerState extends ConsumerState<CardContainer>
           ),
 
           // Floating particles effect
-          ...List.generate(5, (index) => _buildFloatingParticle(index)),
+          ...List.generate(8, (index) => _buildFloatingParticle(index)),
 
           // Card area
           Center(
@@ -165,10 +167,12 @@ class _CardContainerState extends ConsumerState<CardContainer>
                         sexContext: gameState.currentQuestion!.sexContext,
                         onCorrectSwipe: () {
                           _hideCard();
-                          // Play success sound here
+                          // Play success sound
+                          HapticFeedback.mediumImpact();
                         },
                         onWrongSwipe: () {
-                          // Play error sound here
+                          // Play error sound
+                          HapticFeedback.heavyImpact();
                         },
                         onSwipe: (direction) {
                           gameService.handleSwipe(direction);
@@ -202,33 +206,47 @@ class _CardContainerState extends ConsumerState<CardContainer>
               left: 16,
               child: _buildPracticeModeIndicator(),
             ),
+            
+          // Normal range display in practice mode
+          if (gameState.isPracticeMode && gameState.currentQuestion != null)
+            Positioned(
+              bottom: MediaQuery.of(context).padding.bottom + 20,
+              left: 0,
+              right: 0,
+              child: _buildNormalRangeDisplay(gameState.currentQuestion!),
+            ),
         ],
       ),
     );
   }
 
   Widget _buildFloatingParticle(int index) {
+    final random = index * 0.2;
+    final randomSize = 4.0 + (index * 2.0);
+    final randomOpacity = 0.1 + (index * 0.05);
+    
     return AnimatedBuilder(
       animation: _backgroundController,
       builder: (context, child) {
-        final offset = (_backgroundAnimation.value + (index * 0.2)) % 1.0;
         final size = MediaQuery.of(context).size;
-        
         return Positioned(
-          left: (size.width * 0.1) + (offset * size.width * 0.8),
-          top: (size.height * 0.2) + (offset * size.height * 0.6),
+          top: size.height * (0.2 + 
+               (math.sin(_backgroundController.value * 2 * math.pi + random) * 0.3)),
+          left: size.width * (0.1 + 
+                (math.cos(_backgroundController.value * 2 * math.pi + random) * 0.4)),
           child: Container(
-            width: 4 + (index * 2),
-            height: 4 + (index * 2),
+            width: randomSize,
+            height: randomSize,
             decoration: BoxDecoration(
-              color: index.isEven 
-                  ? AppTheme.primaryNeon.withOpacity(0.3)
-                  : AppTheme.secondaryNeon.withOpacity(0.3),
               shape: BoxShape.circle,
+              color: index.isEven 
+                  ? AppTheme.primaryNeon.withOpacity(randomOpacity)
+                  : AppTheme.secondaryNeon.withOpacity(randomOpacity),
               boxShadow: [
                 BoxShadow(
-                  color: (index.isEven ? AppTheme.primaryNeon : AppTheme.secondaryNeon)
-                      .withOpacity(0.5),
+                  color: index.isEven 
+                      ? AppTheme.primaryNeon.withOpacity(randomOpacity)
+                      : AppTheme.secondaryNeon.withOpacity(randomOpacity),
                   blurRadius: 10,
                   spreadRadius: 2,
                 ),
@@ -364,6 +382,13 @@ class _CardContainerState extends ConsumerState<CardContainer>
           color: Colors.green,
           width: 1.5,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.green.withOpacity(0.2),
+            blurRadius: 8,
+            spreadRadius: 1,
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -375,7 +400,7 @@ class _CardContainerState extends ConsumerState<CardContainer>
           ),
           const SizedBox(width: 6),
           const Text(
-            'PRACTICE',
+            'PRACTICE MODE',
             style: TextStyle(
               color: Colors.green,
               fontSize: 12,
@@ -383,6 +408,87 @@ class _CardContainerState extends ConsumerState<CardContainer>
             ),
           ),
         ],
+      ),
+    );
+  }
+  
+  Widget _buildNormalRangeDisplay(GameQuestion question) {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 30),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppTheme.cardDark.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.green,
+            width: 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.green.withOpacity(0.3),
+              blurRadius: 15,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'NORMAL RANGE',
+              style: TextStyle(
+                color: Colors.green,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildRangeIndicator(question.unitData.normalLow, question.unitData.unitSymbol, Colors.blue),
+                const Text(
+                  ' - ',
+                  style: TextStyle(color: AppTheme.textBright, fontSize: 18),
+                ),
+                _buildRangeIndicator(question.unitData.normalHigh, question.unitData.unitSymbol, Colors.red),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              question.sexContext == SexContext.general 
+                ? 'General population'
+                : question.sexContext == SexContext.male 
+                  ? 'Adult males'
+                  : 'Adult females',
+              style: TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildRangeIndicator(double value, String unit, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.5)),
+      ),
+      child: Text(
+        '${value.toString()} $unit',
+        style: TextStyle(
+          color: AppTheme.textBright,
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
