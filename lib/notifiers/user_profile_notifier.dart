@@ -13,7 +13,7 @@ class UserProfileNotifier extends StateNotifier<profile_model.UserProfile> {
   }
 
   Future<void> _loadProfile() async {
-    final medicalProfile = await StorageService.loadUserProfile();
+    final medicalProfile = StorageService.loadUserProfile();
     // Convert from medical_models.UserProfile to user_profile.UserProfile
     state = _convertFromMedicalProfile(medicalProfile);
   }

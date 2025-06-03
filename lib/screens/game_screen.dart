@@ -108,10 +108,10 @@ class _SettingsModal extends ConsumerWidget {
         color: AppTheme.surfaceDark,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         boxShadow: AppTheme.neonShadow(AppTheme.secondaryNeon),
-        border: Border(
+        border: const Border(
           top: BorderSide(color: AppTheme.secondaryNeon, width: 2),
-          left: BorderSide(color: AppTheme.secondaryNeon.withOpacity(0.5), width: 2),
-          right: BorderSide(color: AppTheme.secondaryNeon.withOpacity(0.5), width: 2),
+          left: BorderSide(color: AppTheme.secondaryNeon, width: 2),
+          right: BorderSide(color: AppTheme.secondaryNeon, width: 2),
         ),
       ),
       child: Wrap(

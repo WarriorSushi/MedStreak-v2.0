@@ -16,7 +16,7 @@ class GameCard extends StatefulWidget {
   final Function(SwipeDirection) onSwipe;
 
   const GameCard({
-    Key? key,
+    super.key,
     required this.parameter,
     required this.value,
     required this.unitData,
@@ -26,7 +26,7 @@ class GameCard extends StatefulWidget {
     required this.onCorrectSwipe,
     required this.onWrongSwipe,
     required this.onSwipe,
-  }) : super(key: key);
+  });
 
   @override
   State<GameCard> createState() => _GameCardState();
@@ -47,7 +47,6 @@ class _GameCardState extends State<GameCard>
   bool _isAnimating = false;
   bool _showError = false;
   String _errorText = '';
-  SwipeDirection? _lastSwipeDirection;
 
   @override
   void initState() {
@@ -155,7 +154,6 @@ class _GameCardState extends State<GameCard>
     if (_isAnimating) return;
     
     _isAnimating = true;
-    _lastSwipeDirection = direction;
     
     // Haptic feedback
     HapticFeedback.lightImpact();
