@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../models/medical_models.dart';
 import '../services/game_service.dart';
+import '../services/sound_service.dart';
 import '../utils/theme.dart';
 import '../data/parameter_categories.dart';
 
@@ -58,18 +59,123 @@ class SettingsScreen extends ConsumerWidget {
               
               const SizedBox(height: 24),
               
-              // Sound Settings
-              _buildSectionTitle('Sound Settings'),
+              // Sound & Feedback Settings
+              _buildSectionTitle('Sound & Feedback'),
               const SizedBox(height: 10),
               _buildSwitchSetting(
                 'Sound Effects',
-                settings.soundEnabled,
+                ref.watch(soundServiceProvider).settings.soundEnabled,
                 (value) {
-                  ref.read(userProfileProvider.notifier).updateSettings(
-                    settings.copyWith(soundEnabled: value)
+                  final soundService = ref.read(soundServiceProvider);
+                  soundService.updateSettings(
+                    soundService.settings.copyWith(soundEnabled: value)
                   );
+                  
+                  // Also play a sound if enabling sounds
+                  if (value) {
+                    soundService.playSound(SoundEffect.buttonTap);
+                  }
                 },
                 AppTheme.primaryNeon,
+              ),
+              
+              const SizedBox(height: 12),
+              _buildSwitchSetting(
+                'Haptic Feedback',
+                ref.watch(soundServiceProvider).settings.hapticsEnabled,
+                (value) {
+                  final soundService = ref.read(soundServiceProvider);
+                  soundService.updateSettings(
+                    soundService.settings.copyWith(hapticsEnabled: value)
+                  );
+                  
+                  // Provide haptic feedback when enabling
+                  if (value) {
+                    soundService.playHaptic(HapticFeedbackType.light);
+                  }
+                },
+                Colors.purple,
+              ),
+              
+              const SizedBox(height: 12),
+              
+              // Volume slider
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.volume_down,
+                      color: AppTheme.textSecondary,
+                      size: 22,
+                    ),
+                    Expanded(
+                      child: Slider(
+                        min: 0.0,
+                        max: 1.0,
+                        divisions: 10,
+                        value: ref.watch(soundServiceProvider).settings.volume,
+                        activeColor: AppTheme.primaryNeon,
+                        inactiveColor: AppTheme.primaryNeon.withOpacity(0.2),
+                        onChanged: ref.watch(soundServiceProvider).settings.soundEnabled
+                            ? (value) {
+                                final soundService = ref.read(soundServiceProvider);
+                                soundService.setVolume(value);
+                              }
+                            : null,
+                      ),
+                    ),
+                    const Icon(
+                      Icons.volume_up,
+                      color: AppTheme.textSecondary,
+                      size: 22,
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 12),
+              
+              // Test sounds button
+              GestureDetector(
+                onTap: () {
+                  context.go('/sound-test');
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryNeon.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppTheme.primaryNeon.withOpacity(0.5),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.music_note,
+                        color: AppTheme.primaryNeon,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Test Sound Effects',
+                        style: TextStyle(
+                          color: AppTheme.primaryNeon,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        color: AppTheme.primaryNeon,
+                        size: 16,
+                      ),
+                    ],
+                  ),
+                ),
               ),
               
               const SizedBox(height: 24),

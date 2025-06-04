@@ -9,6 +9,7 @@ import 'screens/main_menu_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/practice_screen.dart';
+import 'screens/sound_test_screen.dart';
 import 'services/storage_service.dart';
 import 'services/game_service.dart';
 import 'utils/theme.dart';
@@ -43,6 +44,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/sound-test',
+        builder: (context, state) => const SoundTestScreen(),
       ),
     ],
     redirect: (context, state) {

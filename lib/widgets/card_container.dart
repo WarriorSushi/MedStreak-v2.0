@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../widgets/game_card.dart';
+import '../widgets/confetti_particle.dart';
 import '../services/game_service.dart';
+import '../services/sound_service.dart';
 import '../models/medical_models.dart';
 import '../utils/theme.dart';
 
@@ -18,55 +20,94 @@ class _CardContainerState extends ConsumerState<CardContainer>
     with TickerProviderStateMixin {
   late AnimationController _entryController;
   late AnimationController _backgroundController;
+  late AnimationController _milestoneController;
   late Animation<double> _entryAnimation;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<double> _backgroundAnimation;
+  late Animation<double> _milestoneScaleAnimation;
+  late Animation<double> _milestoneGlowAnimation;
 
   GameQuestion? _previousQuestion;
   bool _showingCard = false;
+  bool _showConfetti = false;
 
   @override
   void initState() {
     super.initState();
     _setupAnimations();
+    
+    // Initialize sound service
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(soundServiceProvider).initialize();
+    });
   }
 
   void _setupAnimations() {
+    // Entry animation controller with slightly faster duration for snappier feel
     _entryController = AnimationController(
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 700),
       vsync: this,
     );
 
+    // Continuous background animation controller
     _backgroundController = AnimationController(
       duration: const Duration(milliseconds: 3000),
       vsync: this,
     )..repeat();
+    
+    // Milestone animation controller (for streak celebrations)
+    _milestoneController = AnimationController(
+      duration: const Duration(milliseconds: 2500),
+      vsync: this,
+    );
 
+    // Entry opacity animation with custom curve for smooth fade-in
     _entryAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
     ).animate(CurvedAnimation(
       parent: _entryController,
-      curve: Curves.elasticOut,
+      curve: const Interval(0.1, 0.8, curve: Curves.easeOut),
     ));
 
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0.0, -1.5),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _entryController,
-      curve: Curves.elasticOut,
-    ));
+    // Entry slide animation with improved physics for natural feel
+    _slideAnimation = TweenSequence<Offset>([
+      TweenSequenceItem(
+        tween: Tween<Offset>(
+          begin: const Offset(0.0, -0.7),
+          end: const Offset(0.0, 0.05),
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 70.0,
+      ),
+      TweenSequenceItem(
+        tween: Tween<Offset>(
+          begin: const Offset(0.0, 0.05),
+          end: Offset.zero,
+        ).chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 30.0,
+      ),
+    ]).animate(_entryController);
 
-    _scaleAnimation = Tween<double>(
-      begin: 0.3,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _entryController,
-      curve: Curves.elasticOut,
-    ));
+    // Entry scale animation with overshoot effect
+    _scaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.6,
+          end: 1.05,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 70.0,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 1.05,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 30.0,
+      ),
+    ]).animate(_entryController);
 
+    // Continuous background animation
     _backgroundAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
@@ -74,6 +115,42 @@ class _CardContainerState extends ConsumerState<CardContainer>
       parent: _backgroundController,
       curve: Curves.easeInOut,
     ));
+    
+    // Milestone celebration animations
+    _milestoneScaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 1.15)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 20.0,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.15, end: 1.0)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 30.0,
+      ),
+      TweenSequenceItem(
+        tween: ConstantTween<double>(1.0),
+        weight: 50.0,
+      ),
+    ]).animate(_milestoneController);
+    
+    _milestoneGlowAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 20.0,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.6)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 30.0,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.6, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 50.0,
+      ),
+    ]).animate(_milestoneController);
   }
 
   @override
@@ -89,11 +166,40 @@ class _CardContainerState extends ConsumerState<CardContainer>
     setState(() {
       _showingCard = true;
     });
+    
+    // Play card entry sound
+    ref.read(soundServiceProvider).playSound(SoundEffect.cardEntry);
   }
 
   void _hideCard() {
     setState(() {
       _showingCard = false;
+    });
+  }
+  
+  /// Triggers milestone celebration animation effects
+  void _celebrateStreakMilestone() {
+    // Reset the controller in case it's already running
+    _milestoneController.reset();
+    
+    // Start the animation
+    _milestoneController.forward().then((_) {
+      // Reset the controller when animation completes
+      _milestoneController.reset();
+    });
+    
+    // Display confetti celebration particles
+    setState(() {
+      _showConfetti = true;
+    });
+    
+    // Hide confetti after duration
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _showConfetti = false;
+        });
+      }
     });
   }
 
@@ -116,6 +222,10 @@ class _CardContainerState extends ConsumerState<CardContainer>
       height: double.infinity,
       child: Stack(
         children: [
+          // Confetti particle system (only shown during celebrations)
+          if (_showConfetti)
+            ConfettiParticleSystem(active: _showConfetti),
+            
           // Animated background
           AnimatedBuilder(
             animation: _backgroundAnimation,
@@ -167,14 +277,28 @@ class _CardContainerState extends ConsumerState<CardContainer>
                         sexContext: gameState.currentQuestion!.sexContext,
                         onCorrectSwipe: () {
                           _hideCard();
-                          // Play success sound
-                          HapticFeedback.mediumImpact();
+                          // Play success sound with haptic feedback
+                          ref.read(soundServiceProvider).playCorrectFeedback();
+                          
+                          // Check for streak milestones
+                          final gameState = ref.read(gameServiceProvider);
+                          if (gameState.currentStreak > 0 && 
+                              gameState.currentStreak % 5 == 0) {
+                            // Play special sound for milestone
+                            ref.read(soundServiceProvider).playStreakMilestoneFeedback();
+                            // Trigger milestone celebration animation
+                            _celebrateStreakMilestone();
+                          }
                         },
                         onWrongSwipe: () {
-                          // Play error sound
-                          HapticFeedback.heavyImpact();
+                          // Play error sound with haptic feedback
+                          ref.read(soundServiceProvider).playWrongFeedback();
                         },
                         onSwipe: (direction) {
+                          // Play swipe sound
+                          ref.read(soundServiceProvider).playSound(SoundEffect.swipe);
+                          
+                          // Handle game logic
                           gameService.handleSwipe(direction);
                         },
                       ),
@@ -192,11 +316,33 @@ class _CardContainerState extends ConsumerState<CardContainer>
             child: _buildUnitToggleButton(gameState, gameService),
           ),
 
-          // Streak counter
+          // Streak counter with milestone animations
           Positioned(
             top: MediaQuery.of(context).padding.top + 16,
             left: 16,
-            child: _buildStreakCounter(gameState.currentStreak),
+            child: AnimatedBuilder(
+              animation: Listenable.merge([_milestoneController, _milestoneScaleAnimation]),
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: _milestoneScaleAnimation.value,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: _milestoneGlowAnimation.value > 0.1 
+                        ? [
+                            BoxShadow(
+                              color: Colors.amber.withOpacity(_milestoneGlowAnimation.value * 0.7),
+                              blurRadius: 15,
+                              spreadRadius: _milestoneGlowAnimation.value * 5,
+                            ),
+                          ]
+                        : null,
+                    ),
+                    child: _buildStreakCounter(gameState.currentStreak),
+                  ),
+                );
+              },
+            ),
           ),
 
           // Practice mode indicator
