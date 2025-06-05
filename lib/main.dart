@@ -14,12 +14,19 @@ import 'services/storage_service.dart';
 import 'services/game_service.dart';
 import 'utils/theme.dart';
 
-// Define the router configuration
+// Simple direct provider for router configuration
 final routerProvider = Provider<GoRouter>((ref) {
+  // Create a direct reference to the storage service to check onboarding status
+  // This ensures we're always getting the latest value from storage
   final userProfile = ref.watch(userProfileProvider);
   
+  // Create a refresh notifier to force router refresh when needed
+  final refreshNotifier = ref.watch(routerRefreshProvider);
+  
   return GoRouter(
+    refreshListenable: refreshNotifier, // Add refresh listener
     initialLocation: '/splash',
+    debugLogDiagnostics: true,
     routes: [
       GoRoute(
         path: '/splash',
@@ -50,22 +57,46 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SoundTestScreen(),
       ),
     ],
+    // Improved redirect logic with direct storage check
     redirect: (context, state) {
-      // Handle redirections based on app state
-      if (state.fullPath == '/splash') {
-        return null; // Don't redirect splash screen
-      }
+      // Always allow splash screen
+      if (state.fullPath == '/splash') return null;
       
-      // If user hasn't completed onboarding, redirect to onboarding
-      if (!userProfile.hasCompletedOnboarding && 
-          state.fullPath != '/onboarding') {
-        return '/onboarding';
-      }
+      // Get onboarding status from both the provider and directly from storage
+      // This ensures we have the most up-to-date value
+      final hasCompletedOnboarding = userProfile.hasCompletedOnboarding;
       
-      return null; // No redirection needed
+      // Also check storage directly as a backup
+      final onboardingCompleted = StorageService.isOnboardingCompleted();
+      
+      print('ROUTER: Path=${state.fullPath}, onboarding from provider=$hasCompletedOnboarding, from storage=$onboardingCompleted');
+      
+      // Use either source - if either says onboarding is complete, consider it complete
+      final isOnboardingComplete = hasCompletedOnboarding || onboardingCompleted;
+      
+      // Simple redirect logic
+      if (!isOnboardingComplete) {
+        // Not completed onboarding - only allow onboarding screen
+        return state.fullPath != '/onboarding' ? '/onboarding' : null;
+      } else {
+        // Completed onboarding - don't allow going back to onboarding
+        return state.fullPath == '/onboarding' ? '/menu' : null;
+      }
     },
   );
 });
+
+// Add a refresh notifier to force router refresh when needed
+final routerRefreshProvider = ChangeNotifierProvider<RouterRefreshNotifier>((ref) {
+  return RouterRefreshNotifier();
+});
+
+// Simple notifier to force router refresh
+class RouterRefreshNotifier extends ChangeNotifier {
+  void refresh() {
+    notifyListeners();
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
